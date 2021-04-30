@@ -11,13 +11,20 @@ Cmd_file Configuration steps
 The N node topology is split into 3 tiers, Core Routers [tier1], Distribution Routers [tier2] and Access Routers [tier3]. Each tier has slight changes in configuring the nodes,
 Tier1
 node-0,sudo ./EIBL -T 1 -L 1.1 -N 1
+
 ‘node-0’ is the name of the node obtained from GENI
+
 ‘./EIBL’ is the source code that runs EIBL protocol on node-0
+
 ‘-T 1’ is to denote that it is a tier 1 router 
+
 ‘1.1’ is the label assigned to the node [Only Core routers needs to be labeled]
+
 ‘-N 1’ is to denote that it is not an end node/Access Router/tier 3 Router
+
 Tier2 
 node-3,sudo ./EIBL -T 2 -N 1
+
 ‘-T 2’ is to denote that it is a tier 2 router
 Tier3
 node-8,sudo ./EIBL -T 3 -N 0 10.10.26.1 24 eth3
