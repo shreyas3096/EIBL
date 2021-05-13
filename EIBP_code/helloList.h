@@ -237,10 +237,10 @@ void printNeighbourTable() {
 	while (fNode->next != NULL) {
 		temp  = fNode->tier;		
 		if(enableLogScreen)
-			printf("\n ------- %s -----%s---%f",temp,fNode->port,fNode->lastUpdate);
+			printf("\n ------- %s -----",temp);
 		fNode = fNode->next;
 	}
-	printf("\n ------- %s -----%s---%f",fNode->tier,fNode->port,fNode->lastUpdate);
+	printf("\n ------- %s -----",fNode->tier);
 	return;
 }
  
