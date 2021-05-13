@@ -1136,30 +1136,6 @@ int findUIDtoDestinationMatch(char* destAddr , char* neighborAddr){
 
 }
 
-
-
-//Code by JOE commented on August 25, 2017
-// int findUIDtoDestinationMatch(char* add1 , char* add2){
-
-// 	char destUID[20];
-// 	char neighbourUID[20];
-
-// 	// replaced myUID with neighbour - Aug 24
-// 	getUID(neighbourUID,add2);
-// 	getUID(destUID,add1);
-
-//     if (strstr(destUID, neighbourUID) == NULL) {
-//         printf("Substring not matched : %s not in %s", neighbourUID, destUID);
-//         return 0;
-//     }
-//     else {
-//         printf("Substring matched : %s", strstr(destUID, neighbourUID));
-//         // Get the length
-//         return sizeof(neighbourUID)-1;
-//     }
-
-// }
-
 /**
  * CheckAllDestinationLabels(char[])
  *
