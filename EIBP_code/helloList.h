@@ -1,3 +1,11 @@
+/*
+ * helloList.h
+ *
+ *  Created on: Mar 29, 2015
+ *  Updated on: Apr 02, 2015
+ *      Author: tsp3859
+ */
+
 #ifndef HELLOLIST_H_
 #define HELLOLIST_H_
 
@@ -21,6 +29,7 @@ boolean setByTierPartial(char inTier[20], boolean setFWDFields);
 boolean setByTierOnly(char inTier[20], boolean setFWDFields);
 boolean setByTierManually(char inTier[20], boolean setFWDFields);
 void timestamp();
+struct timeval current_time;
 
 extern void getUID(char* curUID,char* currentTier);
 
@@ -29,7 +38,7 @@ extern void modify_LL(char *addr);
 struct nodeHL {
 	char tier[20];          // tier value
 	char port[20];  	    // received interface
-	time_t lastUpdate;      // last updated time
+	double lastUpdate;      // last updated time
 	struct nodeHL *next;      // next node
 }*headHL;
 
@@ -51,8 +60,9 @@ void append(char inTier[20], char inPort[20]) {
 
 	strcpy(temp->tier, inTier);
 	strcpy(temp->port, inPort);
-	temp->lastUpdate = time(0);
-
+	gettimeofday(&current_time , NULL);
+	temp->lastUpdate = ((double)current_time.tv_sec*1000000 + (double)current_time.tv_usec)/1000000;
+	
 	right = (struct nodeHL *) headHL;
 	while (right->next != NULL)
 		right = right->next;
@@ -87,19 +97,27 @@ boolean checkIfSubstring(char* add1 , char* add2){
 
  	while( (add1[posAdd1] != '\0') && (add2[posAdd2] != '\0'))
  	{
+		// printf("\n posAdd1 = %d  \n",posAdd1);  
+ 		// printf("\n add1[posAdd1] =%c",add1[posAdd1]);
 		while( (add1[posAdd1] != '.') && (add1[posAdd1] != '\0'))
  		{
+
+ 			// printf("\n add1[posAdd1] = %c  posAdd1=%d\n",add1[posAdd1],posAdd1);   
 			val1 = (val1 * 10 )+  add1[posAdd1] - '0' ;
 			posAdd1++;
  		}
 	
-	 	while( (add2[posAdd2] != '.') && (add2[posAdd2] != '\0'))
+	 	// printf("\n posAdd2 = %d \n",posAdd2);  
+ 		// printf("\n add2[posAdd2] =%c",add2[posAdd2]);
+ 		while( (add2[posAdd2] != '.') && (add2[posAdd2] != '\0'))
  		{
+ 			// printf("\n add2[posAdd2] = %c  posAdd2=%d\n",add2[posAdd2],posAdd2);   
  			val2 = (val2 * 10 )+  add2[posAdd2] - '0' ;
 			posAdd2++;
  		}
- 		
-		 if(val1 != val2)
+ 		//printf("\nval1 = %d val2 = %d\n",val1,val2);
+ 		// printf("\n  add1[posAdd1] =%c add2[posAdd2] =%c",add1[posAdd1],add2[posAdd2]);
+ 		if(val1 != val2)
  		{
  			if(enableLogScreen)
  				printf("\n%s :No substring match found in between (%s) and (%s)\n",__FUNCTION__, add1, add2);
@@ -135,20 +153,30 @@ checkIfSubstring is used in forward algorithm, the print statements are useful f
 
  	while( (add1[posAdd1] != '\0') && (add2[posAdd2] != '\0'))
  	{
+		// printf("\n posAdd1 = %d  \n",posAdd1);  
+ 		// printf("\n add1[posAdd1] =%c",add1[posAdd1]);
 		while( (add1[posAdd1] != '.') && (add1[posAdd1] != '\0'))
  		{
+
+ 			// printf("\n add1[posAdd1] = %c  posAdd1=%d\n",add1[posAdd1],posAdd1);   
 			val1 = (val1 * 10 )+  add1[posAdd1] - '0' ;
 			posAdd1++;
  		}
 	
+	 	// printf("\n posAdd2 = %d \n",posAdd2);  
+ 		// printf("\n add2[posAdd2] =%c",add2[posAdd2]);
  		while( (add2[posAdd2] != '.') && (add2[posAdd2] != '\0'))
  		{
+ 			// printf("\n add2[posAdd2] = %c  posAdd2=%d\n",add2[posAdd2],posAdd2);   
  			val2 = (val2 * 10 )+  add2[posAdd2] - '0' ;
 			posAdd2++;
  		}
- 		
-		 if(val1 != val2)
+ 		//printf("\nval1 = %d val2 = %d\n",val1,val2);
+ 		// printf("\n  add1[posAdd1] =%c add2[posAdd2] =%c",add1[posAdd1],add2[posAdd2]);
+ 		if(val1 != val2)
  		{
+ 			
+
  			return false;
  		}
 
@@ -169,7 +197,8 @@ void add(char inTier[20], char inPort[20]) {
 	temp = (struct nodeHL *) malloc(sizeof(struct nodeHL));
 	strcpy(temp->tier, inTier);
 	strcpy(temp->port, inPort);
-	temp->lastUpdate = time(0);
+	gettimeofday(&current_time , NULL);
+	temp->lastUpdate = ((double)current_time.tv_sec*1000000 + (double)current_time.tv_usec)/1000000;
 
 	if (headHL == NULL) {
 		headHL = temp;
@@ -201,16 +230,17 @@ void printNeighbourTable() {
 			printf("ERROR: Neighbor List is empty (Isolated Node)\n");
 		return;
 	}
-	
+	// traverse the list
+	// testing
 	if(enableLogScreen)
 		printf("\n*************** Neighbor Table *************");
 	while (fNode->next != NULL) {
 		temp  = fNode->tier;		
 		if(enableLogScreen)
-			printf("\n ------- %s --------",temp);
+			printf("\n ------- %s -----%s---%f",temp,fNode->port,fNode->lastUpdate);
 		fNode = fNode->next;
 	}
-	printf("\n ------- %s --------",fNode->tier);
+	printf("\n ------- %s -----%s---%f",fNode->tier,fNode->port,fNode->lastUpdate);
 	return;
 }
  
@@ -263,7 +293,11 @@ int find(char inTier[20], char inPort[20]) {
 
 	struct nodeHL *fNode = headHL;
 
+	// traverse the list
+	// testing
 	while (fNode != NULL) {
+		//while (fNode->next != NULL) {
+
 		// Target Node
 		// Length Check
 		// Value check
@@ -273,7 +307,7 @@ int find(char inTier[20], char inPort[20]) {
 
 				if (strlen(fNode->port) == strlen(inPort)) {
 
-		
+					//}
 					if (strncmp(fNode->port, inPort, strlen(inPort)) == 0) {
 
 						returnVal = 0;
@@ -301,11 +335,14 @@ int find(char inTier[20], char inPort[20]) {
  */
 void update(char inTier[20], char inPort[20]) {
 
+	// to be updated
 	struct nodeHL *uNode = headHL;
 
 	// traverse the list
 	// testing
 	while (uNode != NULL) {
+
+		//while (uNode->next != NULL) {
 
 		// Target Node
 		// Length Check
@@ -317,9 +354,12 @@ void update(char inTier[20], char inPort[20]) {
 
 				if (strlen(uNode->port) == strlen(inPort)) {
 
+					//}
 					if (strncmp(uNode->tier, inTier, strlen(inTier)) == 0) {
-
-						uNode->lastUpdate = time(0);
+						gettimeofday(&current_time , NULL);
+						uNode->lastUpdate = ((double)current_time.tv_sec*1000000 + (double)current_time.tv_usec)/1000000;
+						
+						//printf("TEST: lastUpdate updated %s\n", uNode->tier);
 						break;
 					}
 				}
@@ -337,7 +377,7 @@ int compare(char *addr){
 	struct nodeHL *temp = headHL;
 	int ret = 0;
 	while(temp){
-		
+		//printf("temp->tier = %s ,addr = %s",temp->tier,addr);
 		if(checkIfSubstr(temp->tier,addr)){
 			return 1;
 		}
@@ -357,37 +397,45 @@ int compare(char *addr){
 
 int delete() {
 
+	//struct nodeHL *deletedTierAddr = NULL;
 	struct nodeHL *temp = headHL;
 	struct nodeHL *prev;
-	
+	//struct nodeTL *fNode = headTL; // headTL - head of the My label table
 	struct nodeTL *temp1, *prev1;
-	  
+	  // headHL is the head of the neighbor label table
 	int ret = 0;
 
 	int t = 0;
 
 	while (temp != NULL) {
 
-		time_t currentTime = time(0);
-		double delTimeDiff = difftime(currentTime, temp->lastUpdate);
+		gettimeofday(&current_time , NULL);
+		double cur_time = ((double)current_time.tv_sec*1000000 + (double)current_time.tv_usec)/1000000;
+		double delTimeDiff = cur_time - temp->lastUpdate;
+		//printf("TEST: delTimeDiff: %f, label: %s, port: %s \n", delTimeDiff, temp->tier, temp->port);
+		
+		
 		
 		// If last updated local time is more than desired time
-		if (delTimeDiff >= 4) {
-			
+		if (delTimeDiff >= 1.1) {
+			//printf("TEST: Inside Time diff delete block (>30)\n");
 			if(t==0){
-				printf("Interface went down at ");
+				printf("Interface went down at %ld",time(0));
 				timestamp();
 				t = 1;
 			}
 			// if node to be removed is head
 			if (temp == headHL) {
-				
+				//printf("TEST: Head node removed value was %s\n", temp->tier);
 				headHL = temp->next;
-				
-			} 
-			
-			else {
+
+				//free(temp);
+				//return 1;
+			} else {
 				prev->next = temp->next;
+				//printf("TEST: other node removed value was %s\n", temp->tier);
+				//free(temp);
+				//return 1;
 			}
 			ret = 1;
 		}
@@ -445,15 +493,18 @@ void displayNeighbor() {
 	struct nodeHL *r;
 	r = headHL;
 	if (r == NULL) {
+		//printf("No Neighbors\n");
 		return;
 	}
-	
+	//printf("My Neighbors\n");
 	int i = 1;
 	while (r != NULL) {
-		
+		//printf("Tier Address %d - Length %zd : %s : Port: %s\n", i,
+				//strlen(r->tier), r->tier, r->port);
 		i = i + 1;
 		r = r->next;
 	}
+	//printf("\n");
 }
 
 /**
@@ -503,7 +554,8 @@ boolean containsTierAddress(char testStr[20]) {
 	// traverse the list
 	// testing
 	while (fNode != NULL) {
-		
+		//while (fNode->next != NULL) {
+
 		if ((strlen(fNode->tier) == strlen(testStr))
 				&& ((strncmp(fNode->tier, testStr, strlen(testStr)) == 0))) {
 			check = true;
@@ -514,6 +566,7 @@ boolean containsTierAddress(char testStr[20]) {
 		}
 
 	}
+	//printf("TEST: Before return check %d \n", check);
 	return check;
 }
 
@@ -530,6 +583,7 @@ boolean containsTierAddress(char testStr[20]) {
  */
 boolean setByTierPartial(char inTier[20], boolean setFWDFields) {
 
+	//printf("Inside setByTierPartial - helloList.h \n");
 	boolean returnVal = false;
 
 	struct nodeHL *fNode = headHL;
@@ -546,9 +600,13 @@ boolean setByTierPartial(char inTier[20], boolean setFWDFields) {
 	// traverse the list
 	// testing
 	while (fNode != NULL) {
+		//while (fNode->next != NULL) {
+
 		// Target Node
 		// Length Check
 		// Value check
+
+		//	if (strlen(fNode->tier) == strlen(inTier)) {
 		if (strncmp(fNode->tier, inTier, strlen(inTier)) == 0) {
 
 			if (setFWDFields == true) {
@@ -571,6 +629,7 @@ boolean setByTierPartial(char inTier[20], boolean setFWDFields) {
 
 		}
 
+		//	}
 
 		fNode = fNode->next;
 	}
@@ -591,6 +650,7 @@ boolean setByTierPartial(char inTier[20], boolean setFWDFields) {
  */
 boolean setByTierOnly(char inTier[20], boolean setFWDFields) {
 
+	//printf("Inside setByTierOnly - helloList.h \n");
 	boolean returnVal = false;
 
 	struct nodeHL *fNode = headHL;
@@ -605,7 +665,8 @@ boolean setByTierOnly(char inTier[20], boolean setFWDFields) {
 	// traverse the list
 	// testing
 	while (fNode != NULL) {
-		
+		//while (fNode->next != NULL) {
+
 		// Target Node
 		// Length Check
 		// Value check
@@ -614,7 +675,7 @@ boolean setByTierOnly(char inTier[20], boolean setFWDFields) {
 				&& ((strncmp(fNode->tier, inTier, strlen(inTier)) == 0))) {
 
 			if (setFWDFields == true) {
-
+// NS what is happening with fwdTierAddr and fwdInterface
 				fwdTierAddr = (char *) malloc(20);
 				memset(fwdTierAddr, '\0', 20);
 				strcpy(fwdTierAddr, fNode->tier);
@@ -631,7 +692,8 @@ boolean setByTierOnly(char inTier[20], boolean setFWDFields) {
 			returnVal = true;
 			break;
 
-		
+			//	}
+
 		}
 
 		fNode = fNode->next;
@@ -640,6 +702,7 @@ boolean setByTierOnly(char inTier[20], boolean setFWDFields) {
 	return returnVal;
 }
 
+// TODO
 /**
  * setByTierManually(char[],boolean)
  *
@@ -655,7 +718,8 @@ boolean setByTierOnly(char inTier[20], boolean setFWDFields) {
  * @return true or false
  */
 boolean setByTierManually(char inTier[20], boolean setFWDFields) {
-	
+
+	//printf("Inside setByTierManually - helloList.h \n");
 	boolean returnVal = false;
 
 	if (setFWDFields == true) {
@@ -720,9 +784,11 @@ boolean setByTierManually(char inTier[20], boolean setFWDFields) {
 		if(strlen(temp1) > strlen(temp)){
            if(enableLogScreen)
 			printf("findParntLongst Inside first if temp =%s  and temp1 = %s", temp, temp1);
-			
+			//struct nodeTL *temp1 = headTL; 
+
+			//int tempLen = findMatchedTeirAddrLength(myTierAdd,temp);
 			if(checkIfSubstring(temp1,temp)){
-				
+				//longestMtchLength = tempLen;
 				if(enableLogScreen)
 			     printf("findParntLongst Inside second if temp = %s and temp1 = %s", temp, temp1);
 				strcpy(parentTierAdd, temp);
@@ -747,6 +813,8 @@ boolean setByTierManually(char inTier[20], boolean setFWDFields) {
 
  */
 
+ //Modified by Supriya, on September 6, 2017.
+
  void findChildLongst(char* desTierAdd,char* childTierAdd, char* myLabel)
  {
 	struct nodeHL *fNode = headHL;
@@ -758,19 +826,28 @@ boolean setByTierManually(char inTier[20], boolean setFWDFields) {
 		return;
 	}
 	
+	//initializing the longest matching length to 0
+	//int longestMtchLength = 0;
 	if(enableLogScreen)
 			printf("\n%s: Finding the appropriate child to forward the packet to\n",__FUNCTION__);
 
 	while (fNode != NULL) {
 		temp  = fNode->tier;		
-		
+		// if(enableLogScreen)
+		// 	printf("\nfindChildLongst : Current Neighbour = %s \n",temp);
+		// if(enableLogFiles)
+		// 	fprintf(fptr,"\nfindChildLongst : Current Neighbour = %s \n",temp);
 		if(strlen(temp) >= strlen(myLabel)){// new line added by Supriya
 			if(strlen(temp) <= strlen(desTierAdd)){
 
+				//int tempLen = findUIDtoDestinationMatch(desTierAdd,temp);
 				if(checkIfSubstring(desTierAdd,temp)){
-				
+					//ongestMtchLength = tempLen;
 					strcpy(childTierAdd, temp);
-				
+					// if(enableLogScreen)
+					// 	printf("\nfindChildLongst : Result = %s \n",childTierAdd);
+					// if(enableLogFiles)
+					// 	fprintf(fptr,"\nfindChildLongst : Result = %s \n",childTierAdd);
 					return;
 				}
 			}
@@ -778,6 +855,10 @@ boolean setByTierManually(char inTier[20], boolean setFWDFields) {
 		fNode = fNode->next;
 	}
 
+	// if(enableLogScreen)
+	// 	printf("\n findChildLongst : Result = %s \n",childTierAdd);
+	// if(enableLogFiles)
+	// 	fprintf(fptr,"\n findChildLongst : Result = %s \n",childTierAdd);
 	return;
  }
 
@@ -810,10 +891,11 @@ int examineNeighbourTable1(char* desTierAdd, char* longstMatchingNgbr,char* myLa
 			fNode = fNode->next;
 	}
 
-}
+ }
 
+ //modified by Supriya on August 28,2017
 
-int examineNeighbourTable(char* desTierAdd, char* longstMatchingNgbr,char* myLabel, int type) 
+ int examineNeighbourTable(char* desTierAdd, char* longstMatchingNgbr,char* myLabel, int type) 
  {
  	int retVal = 1; //ERROR / FAILURE
 	struct nodeHL *fNode = headHL;  // pointer to neighbor table 
@@ -827,11 +909,13 @@ int examineNeighbourTable(char* desTierAdd, char* longstMatchingNgbr,char* myLab
 	
 	//initializing the longest matching length to 0
 	int longestMtchLength = 0; //changed to 0 from 1 on august 25, 2017
-	
+	//int tempLen = 0; 
+
 	if(type == 1){
 		while (fNode != NULL) {
 			temp  = fNode->tier;	
 			if(enableLogScreen){
+				//printf("\n%s temp->%s desTierAdd-->%s",__FUNCTION__,temp,desTierAdd);
 				printf("\n%s: Check if my neighbor: %s is a substring of destination label(uid): %s",__FUNCTION__,temp,desTierAdd);	
 			}
 
@@ -850,6 +934,7 @@ int examineNeighbourTable(char* desTierAdd, char* longstMatchingNgbr,char* myLab
 			while (fNode != NULL) {
 				temp  = fNode->tier;	
 				if(enableLogScreen){
+					//printf("\n%s temp->%s desTierAdd-->%s",__FUNCTION__,temp,desTierAdd);
 					printf("\n%s: Check if destination label(uid): %s is a substring of my neighbor: %s",__FUNCTION__,desTierAdd,temp);	
 				}
 
@@ -861,7 +946,16 @@ int examineNeighbourTable(char* desTierAdd, char* longstMatchingNgbr,char* myLab
 						}
 					}
 				}
-				
+				// tempLen = findMatchedTeirAddrLength(desTierAdd,temp);
+				// if(enableLogScreen)
+				// 	printf("\n %s Matched Length = %d",__FUNCTION__,tempLen);	
+				// if(enableLogFiles)
+				// 	fprintf(fptr,"\n %s Matched Length = %d",__FUNCTION__,tempLen);	
+				// if(tempLen > longestMtchLength){
+				// 	longestMtchLength = tempLen;
+				// 	strcpy(longstMatchingNgbr, temp);
+				// 	retVal = 0;
+				// }
 				fNode = fNode->next;
 			}
 		}
@@ -869,7 +963,7 @@ int examineNeighbourTable(char* desTierAdd, char* longstMatchingNgbr,char* myLab
 			while (fNode != NULL) {
 				temp  = fNode->tier;	
 				if(enableLogScreen){
-				
+					//printf("\n%s temp->%s desTierAdd-->%s",__FUNCTION__,temp,desTierAdd);
 					printf("\n%s: Check if my neighbor: %s is a substring of destination label(uid): %s",__FUNCTION__,desTierAdd, temp);	
 				}
 
@@ -917,26 +1011,40 @@ int examineNeighbourTable(char* desTierAdd, char* longstMatchingNgbr,char* myLab
 		fprintf(fptr,"\n %s Enter : label1 = %s label2 = %s \n",__FUNCTION__,add1,add2); 
 	// skip the tier value of both the addresses
 
+
 	while(add1[posAdd1++] != '.');
  	while(add2[posAdd2++] != '.');
+		
+ 	// printf("\n posAdd1 = %d posAdd2 = %d \n",posAdd1,posAdd2);  
 
-	while( (add1[posAdd1] != '\0') && (add2[posAdd2] != '\0'))
+ 	while( (add1[posAdd1] != '\0') && (add2[posAdd2] != '\0'))
  	{
 		
- 		while( (add1[posAdd1] != '.') && (add1[posAdd1] != '\0'))
+ 		// printf("\n posAdd1 = %d  \n",posAdd1);  
+ 		// printf("\n add1[posAdd1] =%c",add1[posAdd1]);
+		while( (add1[posAdd1] != '.') && (add1[posAdd1] != '\0'))
  		{
 
- 			val1 = (val1 * 10 )+  add1[posAdd1] - '0' ;
+ 			// printf("\n add1[posAdd1] = %c  posAdd1=%d\n",add1[posAdd1],posAdd1);   
+			val1 = (val1 * 10 )+  add1[posAdd1] - '0' ;
 			posAdd1++;
  		}
 		posAdd1++;
 
-		while( (add2[posAdd2] != '.') && (add2[posAdd2] != '\0'))
+		
+	 	// printf("\n posAdd2 = %d \n",posAdd2);  
+ 		// printf("\n add2[posAdd2] =%c",add2[posAdd2]);
+ 		while( (add2[posAdd2] != '.') && (add2[posAdd2] != '\0'))
  		{
+ 			// printf("\n add2[posAdd2] = %c  posAdd2=%d\n",add2[posAdd2],posAdd2);   
  			val2 = (val2 * 10 )+  add2[posAdd2] - '0' ;
 			posAdd2++;
  		}
 		posAdd2++;
+
+ 		// printf("\nval1 = %d val2 = %d\n",val1,val2);
+
+ 		// printf("\n  add1[posAdd1] =%c add2[posAdd2] =%c",add1[posAdd1],add2[posAdd2]);
 
  		if(val1 == val2)
  		{
@@ -984,12 +1092,21 @@ int findUIDmatchfromNeighborTable(char* desTierAdd,char* longstMatchingNgbr)
 
 	//initializing the longest matching length to 0
 	int longestMtchLength = 0;
+	//int tempLen = 0;
 
 	while (fNode != NULL) {
 		temp  = fNode->tier;
+		// if(enableLogScreen){
+		// 	printf("\n%s temp->%s desTierAdd-->%s",__FUNCTION__,temp,desTierAdd);
+		// 	printf("\n %s Checking the match for %s in desTierAdd=%s",__FUNCTION__,temp,desTierAdd);
+		// }
+
+		//tempLen = findUIDtoDestinationMatch(desTierAdd,temp);
+		//if(enableLogScreen)
+		//	printf("\n %s Matched Length = %d",__FUNCTION__,tempLen);
 
 		if(checkIfSubstring(desTierAdd,temp)){
-			
+			//longestMtchLength = tempLen;
 			strcpy(longstMatchingNgbr, temp);
 			return 0;// success
 		}
@@ -1009,6 +1126,7 @@ int findUIDmatchfromNeighborTable(char* desTierAdd,char* longstMatchingNgbr)
  */
 
 
+//Not used anymore August 25, 2017 instead using checkIfSubstring()
 int findUIDtoDestinationMatch(char* destAddr , char* neighborAddr){
 
 	int matchedLength = 0;
@@ -1017,6 +1135,30 @@ int findUIDtoDestinationMatch(char* destAddr , char* neighborAddr){
 	return matchedLength;
 
 }
+
+
+
+//Code by JOE commented on August 25, 2017
+// int findUIDtoDestinationMatch(char* add1 , char* add2){
+
+// 	char destUID[20];
+// 	char neighbourUID[20];
+
+// 	// replaced myUID with neighbour - Aug 24
+// 	getUID(neighbourUID,add2);
+// 	getUID(destUID,add1);
+
+//     if (strstr(destUID, neighbourUID) == NULL) {
+//         printf("Substring not matched : %s not in %s", neighbourUID, destUID);
+//         return 0;
+//     }
+//     else {
+//         printf("Substring matched : %s", strstr(destUID, neighbourUID));
+//         // Get the length
+//         return sizeof(neighbourUID)-1;
+//     }
+
+// }
 
 /**
  * CheckAllDestinationLabels(char[])
@@ -1036,7 +1178,7 @@ int CheckAllDestinationLabels(char* dest){
 
 	while (fNode != NULL) {
 		temp  = fNode->tier;
-		
+		//printf("\n CheckAllDestinationLabels : The element is : [%s]",temp);
 		printf("\n%s: Comparing destination label : [%s] with my label [%s]\n",__FUNCTION__,dest,temp);
 		if ((strlen(temp) == strlen(dest))
 			&& ((strncmp(temp, dest, strlen(dest)) == 0))){
@@ -1047,7 +1189,7 @@ int CheckAllDestinationLabels(char* dest){
 	return 1;
 }
 
-//This function checks if the destination label is a subsrting of 
+//Function Added by supriya on August 31, 2017. This function checks if the destination label is a subsrting of 
 //any of my labels(Which means that the destination is either my parent or grandparent). 
 //IF yes then returns true and generates the address of the parent of the current label to whom the 
 //the packet will be sent. 
@@ -1079,9 +1221,10 @@ boolean isDestSubstringOfMyLabels(char* destLabel,char* myMatchedLabel)
 	return false;
  }
 
-//This function checks if any of my label is a subsrting of the destination label.
-boolean isMyLabelSubstringOfDest(char* destLabel,char* myMatchedLabel) 
-{
+//Function added by supriya 
+ //This function checks if any of my label is a subsrting of the destination label.
+ boolean isMyLabelSubstringOfDest(char* destLabel,char* myMatchedLabel) 
+ {
 	struct nodeTL *fNode = headTL;
 	char* temp;
 	if (fNode == NULL) {
@@ -1103,7 +1246,7 @@ boolean isMyLabelSubstringOfDest(char* destLabel,char* myMatchedLabel)
 		fNode = fNode->next;
 	}
 	return false;
-}
+ }
 
 /**
  * getParent()
@@ -1272,4 +1415,8 @@ void timestamp()
   return;
 }
 
+
+
+
 #endif
+
