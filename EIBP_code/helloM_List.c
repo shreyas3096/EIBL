@@ -1,3 +1,4 @@
+
 #include <sys/types.h>
 #include <netdb.h>
 #include <netinet/if_ether.h>
@@ -14,8 +15,7 @@
 #include <ifaddrs.h>
 #include <unistd.h>
 #include <inttypes.h>
-
-
+#include <sys/time.h>
 #include <net/ethernet.h>
 #include <signal.h>
 #include <ctype.h>
@@ -56,6 +56,7 @@ extern void printMPLRPacketDetails(unsigned char mplrPacket[], int nSize);
 
 extern void printNeighbourTable();
 extern struct addr_tuple *failedLL_head;
+//extern void checkForLinkFailure();
 
 void checkEntriesToAdvertise();
 void checkEntriesToUpdate();
@@ -68,11 +69,17 @@ void add_LL(char label[10]);
 
 char *interfaceList[10];
 int interfaceListSize;
-int actionflag = 1;      //To dodge unwanted messages when an interface comes up after being down
+int actionflag = 1;      //To dodge messages when an interface comes up after being down
 char ip_add[20];
 char specificLine[100];
 char payLoadTier[100];
 char tierDest[12] = "0.0";
+time_t start_time;
+
+time_t process_start_time;
+time_t process_end_time;
+double process_timeDiff;
+struct timeval process_before , process_after;
 
 char *tierAddr[20]; //this character array store the tier address
 char *ipAddress[16]; //this character array store the ip address of ip node
@@ -82,6 +89,7 @@ struct in_addr ips[100];
 char ip_add[20];
 // Structure to keep track of failed EndIPs
 struct addr_tuple *failedEndIPs_head = NULL;
+//struct addr_tuple *failedAddr_head = NULL;
 long long int MPLRCtrlSendCount = 0;
 long long int MPLRDataSendCount = 0;
 long long int MPLRDataFwdCount = 0;
@@ -146,6 +154,18 @@ extern int myTotalTierAddress;
  * @return status (int) - method return value
  */
 
+double time_diff(struct timeval before , struct timeval after)
+{
+	double x_ms , y_ms , diff;
+	
+	x_ms = (double)before.tv_sec*1000000 + (double)before.tv_usec;
+	y_ms = (double)after.tv_sec*1000000 + (double)after.tv_usec;
+	
+	diff = (double)y_ms - (double)x_ms;
+	
+	return diff;
+}
+
 void clean_stdin(void)
 {
     int c;
@@ -180,15 +200,17 @@ boolean updateEndDestinationTierAddrHC(char tempIP[]) {
 	 updateStatus = true;
 	 }
 	 }*/
+
+	//printf("TEST: End Destination Tier Address : %s\n", tierDest);
 	return updateStatus;
 }
 
 int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 
 	if(enableLogScreen)
-		printf("\n EIBL started  ... \n");
+		printf("\n MNLR started  ... \n");
 	if(enableLogFiles)
-		fprintf(fptr,"\n EIBL started  ... \n");
+		fprintf(fptr,"\n MNLR started  ... \n");
 
 	time_t time0 = time(0); //store the start time in time0, so that later we can compare
 	time_t time1; //declare a new timer. time1 will be used later to compare with time0 to compare timings 
@@ -212,15 +234,15 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 	struct sockaddr_ll src_addrIP;
 
 	recvOnEtherPort[5]='\0';
-    // Creating the EIBL CONTROL SOCKET HERE
+    // Creating the MNLR CONTROL SOCKET HERE
 	if ((sock = socket(AF_PACKET, SOCK_RAW, htons(0x8850))) < 0) {
 		errorCount++;
-		perror("ERROR: EIBL Socket ");
-		printf("\nERROR: EIBL Socket ");
+		perror("ERROR: MNLR Socket ");
+		printf("\nERROR: MNLR Socket ");
 
 	}
 
-    // Creating the EIBL IP SOCKET HERE
+    // Creating the MNLR IP SOCKET HERE
 	if ((sockIP = socket(AF_PACKET, SOCK_RAW, htons(0x0800))) < 0) {
 		errorCount++;
 		perror("ERROR: IP Socket ");
@@ -237,24 +259,31 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 	char ctrlPayLoadA[200];
 	memset(ctrlPayLoadA, '\0', 200);
 	uint8_t numOfAddr = (uint8_t) getCountOfTierAddr();
-	memcpy(ctrlPayLoadA, &numOfAddr, 1); 
+	memcpy(ctrlPayLoadA, &numOfAddr, 1); // NS - memory of numAddr stored in ctrlPayLoadA
 	int cpLength = 1;
 
 	int q = 0;
 
 	//size of the tier address and tier Address is copied to cntrlPayLoadA in the below for loop
+	//NS why are we agin calling getCountOfTierAddr() - could have used ctrlPayLoadA
 	for (; q < getCountOfTierAddr(); q++) {
 		char tempAddrA[20];
 		memset(tempAddrA, '\0', 20);
 		strcpy(tempAddrA, getTierAddr(q)); //copy the qth tier address to tempAddrA
 		freeGetTierAddr(); //free the tier address field
-		
+
+		//printf("TEST: (helloM_List) ctrl packet - tempAddrA : %s  \n",
+				//tempAddrA);
 		uint8_t localTierSizeA = strlen(tempAddrA);
-		
+		//printf("TEST:(helloM_List) ctrl packet - localTierSizeA: %u  \n",
+			//	localTierSizeA);
 		memcpy(ctrlPayLoadA + cpLength, &localTierSizeA, 1);
 		cpLength = cpLength + 1;
 		memcpy(ctrlPayLoadA + cpLength, tempAddrA, localTierSizeA);
 		cpLength = cpLength + localTierSizeA;
+ //  printf("PayLoad --- %s",ctrlPayLoadA); 
+		// NS- must print this and check // ctrlPayLoadA can store only 200 char- could have been variable 
+		// SM - Check the SOH and BEL issues in the log 
 	}
 
 	// Send should initiate before receive
@@ -299,20 +328,29 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 		
 		freeInterfaces();
 		interfaceListSize = 0;
+		process_start_time = time(0);
+		
     // Repeats the steps from now on
 	while (1) {
-        
-		int flag = 0;
-		int flagIP = 0;
-		time1 = time(0);
+        //printMyLabels();
+        //clean_stdin();
+        //printf("\n ***********inside while*********\n");
+		
+		process_end_time = time(0);
 
 		double timeDiff = difftime(time1, time0);
 
+		int flag = 0;
+		int flagIP = 0;
+		time1 = time(0);
+		//gettimeofday(&process_after , NULL);
+		//printf("\nTime Difference at while - %f",time_diff(process_before,process_after)/1000000);
+		//gettimeofday(&process_before , NULL);
 		char ctrlPayLoadB[200];
 
         // Checking if we have end node link failure and also to check if any new entries are added to the table.
 		if (!endNode) { // only does when node is an end node - check if there are failures and remove.
-
+			//checkForLinkFailure();
 			checkForLinkFailures(myAddr, numTierAddr);
 			// if we have new failed IPS Advertise.
 			if (failedEndIPs_head != NULL) {
@@ -320,8 +358,8 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 				int loopCounter2 = 0;
 				uint8_t *mplrPayload = allocate_ustrmem (IP_MAXPACKET);
 				int mplrPayloadLen = 0;
-				
-				mplrPayloadLen = buildPayloadRemoveAdvts(mplrPayload, failedEndIPs_head, 2); 
+				//NS buildPayloadRemoveAdvtsts  defined in endNW.c, declared in endNetworkUtilities.h 
+				mplrPayloadLen = buildPayloadRemoveAdvts(mplrPayload, failedEndIPs_head, 2); //NS - defined in endNW.c 
 				if (mplrPayloadLen) {
 					for (; loopCounter2 < interfaceListSize; loopCounter2++) {
 						// MPLR TYPE 5.
@@ -329,16 +367,17 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 					}
 				}
 				free(mplrPayload);
-				
+				//print_entries_LL();
 				freeInterfaces();
 				interfaceListSize = 0;
 			}
-		} 
+		} // end if (!endNode)
 
         checkEntriesToAdvertise();
 		checkEntriesToUpdate();
  		//Send hello packets after every 2 seconds
 		if (timeDiff >= 1) { // Initially set to 2, 
+             // NS changed time from 2 to 1 on 29th Sept
 
 			memset(ctrlPayLoadB, '\0', 200);
 			uint8_t numOfAddrB = getCountOfTierAddr();
@@ -368,17 +407,27 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 			setInterfaces(); //interfaceList is being set by this function
 
 			int loopCounter2 = 0;
-			
+			//printf("\nSENDING HELLO MESSAGE BEGINS\n");
 			for (; loopCounter2 < interfaceListSize; loopCounter2++) {
 
 				ctrlSend(interfaceList[loopCounter2], ctrlPayLoadB); //send control messages
 				MPLRCtrlSendCount++;
-				
+				//printf("\nSending Hello message to - %s at ",interfaceList[loopCounter2]);
+				//timestamp();
 			}
+			
 			int ck = 0;
-			ck = delete(); 
+			time_t current_time = time(0);
+			double delTimeDiff = difftime(current_time, start_time);
+			
+			if(delTimeDiff > 75){
+				ck = delete(); 
+			}
 			 
 			if(ck == 1){
+				//gettimeofday(&process_after , NULL);
+				//printf("\nTime Difference - %f",time_diff(process_before,process_after)/1000000);
+				//gettimeofday(&process_before , NULL);
 				printf("\nNeighbour Table after removing the addresses of the unreachable node");
 				timestamp();
 				printNeighbourTable();
@@ -393,9 +442,11 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 					printf("%s, ",temp->tier);
 					temp = temp -> next;
 				}
+				//failedAddr_head = getFailedAddr();
 
 				if (failedLL_head != NULL) {
-				
+				//setInterfaces(); //interfaceList is being set by this function
+
 				actionflag = 0;
 				int loopCounter2 = 0;
 				uint8_t *mplrPayload = allocate_ustrmem (IP_MAXPACKET);
@@ -409,7 +460,8 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 					}
 				}
 				free(mplrPayload);
-				
+				//print_entries_LL();
+				//freeInterfaces();
 				interfaceListSize = 0;
 				}
 				
@@ -430,7 +482,8 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
         // Recieve messages from the IP socket created.
 		nIP = recvfrom(sockIP, bufferIP, 2048, MSG_DONTWAIT,
 				(struct sockaddr*) &src_addrIP, &addr_lenIP); //inbuilt function to recieve information from socket. If there is any message in socket, we recieve a avalue greater than -1 and if there is no message, -1 will be returned.
-		
+		//NS - nIP has the packet size in bytes 
+
 		if (nIP == -1) {
 			flagIP = 1; //if no message is there in socket, nIP is -1 and flagIP is set to 1
 		}
@@ -444,7 +497,11 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 
 			// Fix for GENI , Ignoring messages from control interface
 			char* ctrlInterface = "eth0";
-			
+			// printf("\n recvOnEtherPortIP = %s",recvOnEtherPortIP);
+			// printf("\n ctrlInterface = %s",ctrlInterface);
+			// printf("\n strlen(recvOnEtherPortIP) = %d",strlen(recvOnEtherPortIP));
+			// printf("\n strlen(ctrlInterface) = %d",strlen(ctrlInterface));
+			//printf("\n (strcmp(recvOnEtherPortIP, ctrlInterface))= %d \n",strcmp(recvOnEtherPortIP, ctrlInterface));
 			if (strcmp(recvOnEtherPortIP, ctrlInterface) == 0) { //eth0 is the control interface. We do not need process any messages on eth0
 				continue;
 			}
@@ -462,18 +519,19 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 					}
 					
 					unsigned char *ipHeadWithPayload;
-					int ipPacketSize = nIP - 14; 
+					int ipPacketSize = nIP - 14; // NS- remove MAC header
 					ipHeadWithPayload = (unsigned char*) malloc(ipPacketSize);
 					memset(ipHeadWithPayload, '\0', ipPacketSize);
 					memcpy(ipHeadWithPayload, &bufferIP[14], ipPacketSize);
-					
+					//NS ipPakcet  now stored in ipHeadWithPayload
+
 					setInterfaces(); //interfaceList is being set by this function
 
 					unsigned char ipDestTemp[20];
 					memset(ipDestTemp, '\0', 20);
 					sprintf(ipDestTemp, "%u.%u.%u.%u", ipHeadWithPayload[16],
 							ipHeadWithPayload[17], ipHeadWithPayload[18],
-							ipHeadWithPayload[19]); 
+							ipHeadWithPayload[19]);  // NS destination IP address is stored in ipDestTemp
 					if(enableLogScreen)
 						printf("IP Destination : %s  \n", ipDestTemp);
 
@@ -481,20 +539,20 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 					memset(ipSourceTemp, '\0', 20);
 					sprintf(ipSourceTemp, "%u.%u.%u.%u", ipHeadWithPayload[12],
 							ipHeadWithPayload[13], ipHeadWithPayload[14],
-							ipHeadWithPayload[15]); 
+							ipHeadWithPayload[15]); // NS source IP address is stored in ipSourceTemp
 					if(enableLogScreen)
 						printf("IP Source  : %s  \n", ipSourceTemp);
 
 					if(enableLogScreen)
 						printf("Calling Forwarding Algorithm - DataSend\n");
 
-					int packetFwdStatus = -1; 
+					int packetFwdStatus = -1; // NS this variable is set here 
 
 					if (isTierSet() == 0) {
 						if(enableLogScreen)
 							printf("%s: isTierSet() == 0",__FUNCTION__);
 						boolean checkDestStatus =
-								updateEndDestinationTierAddrHC(ipDestTemp); 
+								updateEndDestinationTierAddrHC(ipDestTemp); // NS find tier address of destination router connected to dest IP network
 
 						if (checkDestStatus == false) {
 							errorCount++;
@@ -502,8 +560,8 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 								printf("ERROR: End destination tier address not available \n");
 
 						}
-						
-						printf("\n Calling packetForwardAlgorithm linenumber =%d",__LINE__);
+						///NS - whay call packet forwarding algorithm if End destination tier address not available
+                        printf("\n Calling packetForwardAlgorithm linenumber =%d",__LINE__);
 						setTierInfo(headTL->tier);
 						packetFwdStatus = packetForwardAlgorithm(tierAddress,
 								tierDest); //forward the packets using packetforwarding algorithm
@@ -535,7 +593,7 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 
 							if (isFWDFieldsSet() == 0) {
 								if(enableLogScreen){
-									printf("TEST: Forwarding IP Packet as EIBL Data Packet (Encapsulation) \n");
+									printf("TEST: Forwarding IP Packet as MNLR Data Packet (Encapsulation) \n");
 									printf("TEST: Sending on interface: %s \n",fwdInterface);
 								}
 								dataSend(fwdInterface, ipHeadWithPayload,
@@ -564,6 +622,7 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 				memset(ipHeadWithPayload, '\0', ipPacketSize);
 				memcpy(ipHeadWithPayload, &bufferIP[14], ipPacketSize);
 
+				//if(enableLogScreen)
 					printf("\n");
 
 				setInterfaces(); //interfaceList is being set by this function
@@ -573,7 +632,7 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 				sprintf(ipDestTemp, "%u.%u.%u.%u", ipHeadWithPayload[16],
 						ipHeadWithPayload[17], ipHeadWithPayload[18],
 						ipHeadWithPayload[19]);
-				
+				//if(enableLogScreen)
 					printf("[2]\nIP Destination : %s  \n", ipDestTemp);
  				
 				 unsigned char ipSourceTemp[20];
@@ -584,7 +643,10 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
                                  if(enableLogFiles)
                                  	printf("IP Source  : %s  \n", ipSourceTemp);
 
+				//if(enableLogScreen)
 					printf("Calling Forwarding Algorithm - DataSend\n");
+
+				// TESTING FWD ALGORITHM 2 - Case: IP Packet Received, Control Interface not set
 
 				int packetFwdStatus = -1;
 
@@ -595,7 +657,7 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 
 					if (checkDestStatus == false) {
 						errorCount++;
-						
+						//if(enableLogScreen)
 							printf("ERROR: End destination tier address not available \n");
 
 					}
@@ -608,7 +670,7 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 							printf("**interface: %s \n", fwdInterface);
 
 				} else {
-					
+					//if(enableLogScreen)
 						printf("ERROR: Tier info was not set\n");
 
                     printf("\n Calling packetForwardAlgorithm linenumber =%d",__LINE__);
@@ -622,19 +684,31 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 					if ((strlen(fwdTierAddr) == strlen(tierAddress))
 							&& (strcmp(fwdTierAddr, tierAddress) == 0)) {
 
-						
+						//if(enableLogScreen)
 							printf("TEST: Received IP packet -(it's for me only, no forwarding needed) \n");
 
 
 					} else {
 
 						if (isFWDFieldsSet() == 0) {
-							
-								printf("TEST: Forwarding IP Packet as EIBL Data Packet (Encapsulation) \n");
+							//if(enableLogScreen){
+								printf("TEST: Forwarding IP Packet as MNLR Data Packet (Encapsulation) \n");
 								printf("Sending on interface: %s \n", fwdInterface);
-							
+							//}	
+							//int i = 0;
+							//int val = 0;
+							//for(i = 0; i< interfaceListSize;i++)
+							//{
+							//	if(interfaceList[i]=fwdInterface)
+							//		val = 1;
+							//}
+							//if(val = 1)
 							dataSend(fwdInterface, ipHeadWithPayload, tierDest,
 									tierAddress, ipPacketSize);
+							//else
+							//{
+							//	printf("The interface - %s is down",fwdInterface);
+							//}
 							
 							MPLRDataSendCount++;
 						}
@@ -654,7 +728,7 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 
 
 		if (n == -1) {
-            
+            //printf("\n No messages in the control socket. Time out!");
 			flag = 1;
 		}
 
@@ -665,15 +739,34 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 
 			if_indextoname(tc, recvOnEtherPort); //mappings between network interface names and indexes
 
+    //        	printf("\n Control message recvd from %s",recvOnEtherPort); //uncomment it laters
+            
 			ethhead = (unsigned char *) buffer;
 
 			if (ethhead != NULL) {
+//
+//				 printf("\n--------------------------------------"
+//				 	"\n   MAC Destination : "
+//				 		"%02x:%02x:%02x:%02x:%02x:%02x\n", ethhead[0],
+//				 		ethhead[1], ethhead[2], ethhead[3], ethhead[4],
+//				 		ethhead[5]);
+//
+//				 printf("        MAC Origin : "
+//				 		"%02x:%02x:%02x:%02x:%02x:%02x\n", ethhead[6],
+//				 		ethhead[7], ethhead[8], ethhead[9], ethhead[10],
+//				 		ethhead[11]);
+//				 printf("              Type : %02x:%02x \n", ethhead[12],
+//				 		ethhead[13]);
+//				 printf("               MSG : %d \n", ethhead[14]);
+//				 printf("\n");
 
 				MPLROtherReceivedCount++;
 
 				uint8_t checkMSGType = (ethhead[14]);
-			
-				// Checking for different type of EIBL messages
+				
+	//			printf("\n%s : checkMSGType=%d\n",__FUNCTION__,checkMSGType);// uncomment later
+				// SM - Check all the Messages to understand how it works
+                // Checking for different type of MNLR messages
                 // 0x01 = Hello Message
                 // 0x02 = Encapsulated IP Message
                 // 0x05 = IP to Tier Address Mappping message
@@ -684,22 +777,31 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
                 // 0x08 = Labels accepted message
 
                 if (checkMSGType == 1 && strcmp(recvOnEtherPort, "eth0") != 0) {
+					//printf("\nReceived Hello Message from - %s at ",recvOnEtherPort);
+					//timestamp();
+					//printf("Before");
+					//printNeighbourTable();
 					
-					int checksubMSGType = (ethhead[15]);
+                    int checksubMSGType = (ethhead[15]);
 
-					MPLRCtrlReceivedCount++;
+                    //printf("\n checksubMSGType= %d",checksubMSGType);
+
+                	MPLRCtrlReceivedCount++;
                     MPLROtherReceivedCount--;
 
                     int tierAddrTotal = (ethhead[15]);
-                    
-					int lengthIndex = 16;
+
+                    //printf("  No. of Tier Addr : %d\n", tierAddrTotal);
+
+                    int lengthIndex = 16;
                     int z = 0;
 
                     for (; z < tierAddrTotal; z++) {
 
                         int lengthOfTierAddrTemp = 0;
                         lengthOfTierAddrTemp = (ethhead[lengthIndex]);
-                        
+                        //printf("      Tier Address  Length : %d \n", lengthOfTierAddrTemp);
+						//printf("      Number of Tier Address : %d, value of z : %d \n", tierAddrTotal, z);                          
 						unsigned char tierAddrTemp[lengthOfTierAddrTemp];
               
                         memset(tierAddrTemp, '\0', lengthOfTierAddrTemp+1);
@@ -708,11 +810,13 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
                         memcpy(tierAddrTemp, &ethhead[lengthIndex],lengthOfTierAddrTemp);
                                   
                         lengthIndex = lengthIndex + lengthOfTierAddrTemp;
-                       
-					   	int isNewPort = 0;
+
+                        //printf("\n Value of teirAddrTemp : %s\n", tierAddrTemp);
+                        int isNewPort = 0;
 
                         isNewPort = insert(tierAddrTemp, recvOnEtherPort);
-						
+						//printf("\n Hello message from - recvOnEtherPort=%s \n",recvOnEtherPort); //uncomment it later
+
                             if (z == 0) {
 
                                 // the instant we know there is new port we start advertising our tierAdd<->IP table.
@@ -725,11 +829,12 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 
                                     mplrPayloadLen = buildPayload(mplrPayload,
                                                                   COMPLETE_TABLE, 0);
-									if (mplrPayloadLen) {
+									//NS - buildPayload defined in endNW.c 
+                                    if (mplrPayloadLen) {
                                         endNetworkSend(recvOnEtherPort, mplrPayload,
                                                        mplrPayloadLen); //method to send MSG TYPE V 
-                                    
-									}
+                                        //printf("\n CHeck - recvOnEtherPort=%s",recvOnEtherPort);
+                                    }
                                     free(mplrPayload);
 									
                                 }
@@ -741,17 +846,36 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
                         unsigned char *ethhead2;
                         ethhead2 = (unsigned char *) (ethhead + 6);
 
-					
-					
+					// printf(
+					// 		" MAC Origin Copied : %02x:%02x:%02x:%02x:%02x:%02x \n",
+					// 		ethhead2[0], ethhead2[1], ethhead2[2], ethhead2[3],
+					// 		ethhead2[4], ethhead2[5]);
+					// printf("\n");
+					//gettimeofday(&process_after , NULL);
+					//printf("\nTime Difference after receiving Hello messages - %f",time_diff(process_before,process_after)/1000000);
+					//gettimeofday(&process_before , NULL);
+					//printf("After");
+					//printNeighbourTable();
 				} // checkMsgType == 1 is over here
 
 				if (checkMSGType == 2 && strcmp(recvOnEtherPort, "eth0") != 0) {
 
 
 					printf("\n");
-					printf("\n EIBL Data Message received checkMSGType=%d\n",checkMSGType);
+					printf("\n MNLR Data Message received checkMSGType=%d\n",checkMSGType);
 					MPLRDataReceivedCount++;
 					MPLROtherReceivedCount--;
+
+					// TODO
+					// (below line) to be implemented properly
+					//printMPLRPacketDetails(abc,xyz);
+/*
+					int j = 0;
+					for (; j < n - 14; j++) {
+                        //	Printing MPLR Data Packet
+					   // printf("MNLR Content : %d : %02x  \n", j,buffer[j] & 0xff);
+					}
+*/
 
 					// printing destination tier length
 					unsigned char desLenTemp[2];
@@ -794,6 +918,7 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 
 					printf("      Source Tier (Final) : %s \n", finalSrc);
 
+					//printf("\n");
 					tempLoc = tempLoc + srcLen;
 
 					// TESTING FWD ALGORITHM 3 - Case: MPLR Data Packet Received
@@ -802,16 +927,18 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 
 					if (isTierSet() == 0) {
                         printf("\nCalling packetForwardAlgorithm linenumber - Destination label = %s",finalDes);
-						
+						//printf("\nCalling packetForwardAlgorithm linenumber =%d Destination label = %s",__LINE__,finalDes);
 						setTierInfo(headTL->tier);
 						packetFwdStatus = packetForwardAlgorithm(tierAddress,
 								finalDes);
 
-					} else 
-					{
+					} else {
 						errorCount++;
-						
-						}
+						//printf("ERROR: Tier info was not set \n"); 
+                       // printf("\nCalling packetForwardAlgorithm linenumber =%d",__LINE__);
+						// packetFwdStatus = packetForwardAlgorithm(tierAddress, finalDes); NS comemnted on 4-13, wnhy call this when no Tier set?
+
+					}
 
 					if (packetFwdStatus == 0) {
 
@@ -819,6 +946,14 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 						int isDestination = CheckAllDestinationLabels(fwdTierAddr);
 						if (isDestination == 0) {
 
+							//printf("    Fwd Tier Addr : %s \n", fwdTierAddr);
+							//printf("   DestFromPacket : %s \n", finalDes);
+							//printf(
+							//		"TEST: Received MPLR Data packet -(it's for me only, Decapsulation) \n");
+							//MPLRDataReceivedCountForMe++;
+
+							// TODO
+							//printf("\n Comparing fwdTierAddr and tierAddress: %s , %s \n",fwdTierAddr,tierAddress);
 							int decapsPacketSize = n - tempLoc;
 							
 							unsigned char decapsPacket[decapsPacketSize];
@@ -837,7 +972,8 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 							// check for null
 							// if not null, call dataDecapsulation
 							if (portNameTemp != NULL) {
-								
+								//printf("Decaps at port %s \n", portNameTemp);
+
 								struct iphdr *iphUDP = (struct iphdr*)decapsPacket;
 								printf("\n%s : the protocol is =%d\n",__FUNCTION__,iphUDP->protocol);
 
@@ -864,10 +1000,15 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 										break;
 								}
 
-//								 
+//								 dataDecapsulation(portNameTemp, decapsPacket,
+//										decapsPacketSize);
+
+//								dataDecapsulationUDP(portNameTemp, decapsPacket, decapsPacketSize);
+
 								MPLRDecapsulated++;
 							} else {
 
+								//printf("ERROR: MPLR Decapsulation failed \n");
 								errorCount++;
 							}
 
@@ -878,11 +1019,22 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 							if (isFWDFieldsSet() == 0) {
 
 								int MPLRPacketSize = n - 14;
-								
+								// 	MPLRPacketSize = MPLRPacketSize + 1;          // check
 								unsigned char MPLRPacketFwd[MPLRPacketSize];
 								memset(MPLRPacketFwd, '\0', MPLRPacketSize);
 								memcpy(MPLRPacketFwd, &buffer[14],
 										MPLRPacketSize);
+								//printf(" buffer - %s ",&buffer[14]);
+								//printf("TEST: Forwarding MPLR Data Packet \n");
+								//printf("Forwarding on interface: %s \n",
+										//fwdInterface);
+								//printf("\n calling dataFwd function with the parameters - source : %u%u%u%u \n",atoi(int MPLRPacketFwd[2]),
+								//atoi((int) MPLRPacketFwd[3]),atoi((int) MPLRPacketFwd[4]),atoi(int MPLRPacketFwd[5]),atoi((int) MPLRPacketFwd[6]),atoi((int) MPLRPacketFwd[7]));
+								
+								//for (int i = 1; i<=15;i++){
+								//	printf("MPLRPacketFwd[%d] = %d",MPLRPacketFwd[6]);
+								//}
+								
 								
 								dataFwd(fwdInterface, MPLRPacketFwd,
 										MPLRPacketSize);
@@ -892,7 +1044,8 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 						}
 					} else {
 
-						
+						//printf("ERROR: MPLR Forwarding failed %d \n",
+						//			packetFwdStatus);
 						errorCount++;
 					}
 
@@ -900,7 +1053,8 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 
 				if (checkMSGType == 5 && strcmp(recvOnEtherPort, "eth0") != 0) {
 
-					printf("\n TEST: EIBL Message V received \n");
+					printf("\n TEST: MNLR Message V received \n");
+					
 					MPLRMsgVReceivedCount++;
 					MPLROtherReceivedCount--;
 					timestamp();
@@ -933,7 +1087,8 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 						index += tierLen;
 						tierAddr[tierLen] = '\0';
 
-						
+						//printf("TierLen :%u TierAddr: %s\n", tierLen, tierAddr);
+
 						uint8_t ipLen = ethhead[index];
 						struct in_addr ipAddr;
 
@@ -955,7 +1110,7 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 						if (action == MESSAGE_TYPE_ENDNW_ADD) {
 							
 							
-							printf("\nipLen :%u ipAddr: %s cidr: %u", ipLen, inet_ntoa(ipAddr), cidr); 
+							printf("\nipLen :%u ipAddr: %s cidr: %u", ipLen, inet_ntoa(ipAddr), cidr); //cidr %u to %d
 													
 							struct addr_tuple *a = (struct addr_tuple*) malloc(
 									sizeof(struct addr_tuple));
@@ -970,7 +1125,7 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 										sizeof(struct in_addr));
 								a->cidr = cidr;
 								add_entry_LL(a);
-                                
+                                // Suren - we have to comment this
 								print_entries_LL();
 							}
 						} else if (action == MESSAGE_TYPE_ENDNW_UPDATE) {
@@ -984,7 +1139,7 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 							}
 							
 						} else if(action == MESSAGE_TYPE_ENDNW_REMOVE_ADDR){
-							
+							//delete_entry_LL_ADDR();
 							if (delete_entry_LL_Addr(tierAddr)) {
 									hasDeletions++;
 							}
@@ -994,7 +1149,7 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 							//printf("WRONG MSG_ACTION: THIS SHOULD NOT HAPPEN");
 						}
 						totalEntries--;
-					} 
+					} // end of while
 					
 					// Send this frame out of interfaces other than where it came from
 					if (hasDeletions && (action == MESSAGE_TYPE_ENDNW_REMOVE || action == MESSAGE_TYPE_ENDNW_REMOVE_ADDR)) {
@@ -1029,12 +1184,17 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 						print_entries_LL();
 					}
 
+					//gettimeofday(&process_after , NULL);
+					//printf("\nTime Difference after Message V received - %f",time_diff(process_before,process_after)/1000000);
+					//gettimeofday(&process_before , NULL);
+
 				}	// MSG type 5 closed
 
 
                 if (checkMSGType == MESSAGE_TYPE_JOIN) {
                     printf("\nReceived MESSAGE_TYPE_JOIN ");
-                    //sleep(1);
+					
+					//sleep(1);
                     // check for the tierValue.
                     // if the tierValue is < my TierValue , ignore the message
                     // else
@@ -1046,15 +1206,15 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
                     printf("\nMy Tier Value = %d ", myTierValue);
                     printf("\nTier Value of the Requested Node = %d ", tierValueRequestedNode);
                     if (myTierValue < tierValueRequestedNode && strcmp(recvOnEtherPort,"eth0")!=0) {
-						
-						printf("\nMESSAGE_TYPE_JOIN request received from a node at lower tier ");
+						//printf("\n hi = %s.", recvOnEtherPort);
+                        printf("\nMESSAGE_TYPE_JOIN request received from a node at lower tier ");
 
                         printf("\nGenerating the label for the node");
                         printf("\nInterface from which the request recvd = %s", recvOnEtherPort);
 
                         struct labels* labelList;
-                       
-					    int numbNewLabels = generateChildLabel(recvOnEtherPort, tierValueRequestedNode, &labelList);
+                        //labelList = NULL;
+                        int numbNewLabels = generateChildLabel(recvOnEtherPort, tierValueRequestedNode, &labelList);
                         printf("\n%s : Labels are generated\n",__FUNCTION__);
                         //Send this labelList to recvOnEtherPort
 
@@ -1067,23 +1227,24 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
                         memset(labelAssignmentPayLoad, '\0', 200);
 
                         printf("\n %s : Creating the payload to send the new labels %s\n",__FUNCTION__,labelList->label);
-                       
-					    // Setting the number of labels being send
-                        uint8_t numberOfLabels = (uint8_t) numbNewLabels; 
+                       // printf("\n %s : Setting the number of labels in the payload \n",__FUNCTION__);
+                        // Setting the number of labels being send
+                        uint8_t numberOfLabels = (uint8_t) numbNewLabels; // Need to modify
                         memcpy(labelAssignmentPayLoad + cplength, &numberOfLabels, 1);
-                        printf("\n %s : labelAssignmentPayLoad(string) = %x",__FUNCTION__,*labelAssignmentPayLoad); 
+                        printf("\n %s : labelAssignmentPayLoad(string) = %x",__FUNCTION__,*labelAssignmentPayLoad);// NS to fix 
                         cplength++;
 
                         struct labels* temp = labelList;
                         while(temp!=NULL) {
                             printf("\n label list is not null\n");
                             printf("\n current label in the message = %s\n",temp->label);
-                           
-						    // Setting the label length being send
-                            uint8_t labelLength = (uint8_t) strlen(temp->label); 
+                           // printf("\n %s : Setting the label length in the payload \n", __FUNCTION__);
+                            // Setting the label length being send
+                            uint8_t labelLength = (uint8_t) strlen(temp->label); // Need to modify
                             memcpy(labelAssignmentPayLoad + cplength, &labelLength, 1);
                             cplength++;
 
+                            //printf("\n %s : Setting the label in the payload \n", __FUNCTION__);
                             // Setting the labels being send
                             // Need to modify
                             memcpy(labelAssignmentPayLoad + cplength, temp->label, labelLength);
@@ -1092,19 +1253,31 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
                             printf("\n %s : GETTING THE NEXT LABEL \n", __FUNCTION__);
 
                         }
-						
-						printf("\n Sending MESSAGE_TYPE_LABELS_AVAILABLE  to all the interface, "
+						/*
+                        printf("\n MESSAGE BEING SENT = %s",labelAssignmentPayLoad);
+                        printf("\n MESSAGE LENGTH = %d \n",(int)strlen(labelAssignmentPayLoad));
+                        /*int i;
+                        for(i= 0 ; i < 200; i++){ //NS to fix  200? 
+                            printf("%c",labelAssignmentPayLoad[i]);  //NS to fix 
+                        }*/ // nS commented on 4-13-20 
+
+                      //  printf("\n MESSAGE BEING SEND = %s",labelAssignmentPayLoad);
+
+                        printf("\n Sending MESSAGE_TYPE_LABELS_AVAILABLE  to all the interface, "
                                        "interfaceListSize = %d payloadSize=%d \n", interfaceListSize,
                                (int) strlen(labelAssignmentPayLoad));
                         // Send MESSAGE_TYPE_LABELS_AVAILABLE  (Message Type, Tier Value) to all other nodes
                         ctrlLabelSend(MESSAGE_TYPE_LABELS_AVAILABLE, recvOnEtherPort, labelAssignmentPayLoad);
                     }
+					//gettimeofday(&process_after , NULL);
+					//printf("\nTime Difference after MESSAGE_TYPE_JOIN - %f",time_diff(process_before,process_after)/1000000);
+					//gettimeofday(&process_before , NULL);
                 }
 
 
 				if (checkMSGType == MESSAGE_TYPE_LABELS_AVAILABLE) {
 					printf("\n Received MESSAGE_TYPE_LABELS_AVAILABLE \n");
-
+					
 					int numberLabels = ethhead[15];
 					printf("\n Number of Labels available = %d\n", numberLabels);
 					int i = 0;
@@ -1133,11 +1306,16 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 							/* For Default tier address */
 							setTierInfo(label);
 						}
-                      
-					    int check = insertTierAddr(label);	
+                      //  printf("%s",label);
+						// pass it to tier address list
+						//insertTierAddr(label);
+						 int check = insertTierAddr(label);	
                         if (check == 1)                      	
                             add_LL(label);
-                        				
+                         
+				 /*		tierAddr[0] = malloc(1 + strlen(label));
+						strcpy(tierAddr[0], label);
+						tierAddrCount++;*/
                         printf("checking my Tier Addresses");
 						printf("\nAdding the label to the list %s",label);
 
@@ -1193,13 +1371,21 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 
                     printMyLabels();
 					printf("\n Calling printMyLabels linenumber =%d",__LINE__);
+					
+					//gettimeofday(&process_after , NULL);
+					//printf("\nTime Difference after MESSAGE_TYPE_LABELS_AVAILABLE - %f",time_diff(process_before,process_after)/1000000);
+					//gettimeofday(&process_before , NULL);
 				}
 
 				if (checkMSGType == MESSAGE_TYPE_LABELS_ACCEPTED) {
 					printf("\n Received MESSAGE_TYPE_LABELS_ACCEPTED \n");
+					//gettimeofday(&process_after , NULL);
+					//printf("\nTime Difference after MESSAGE_TYPE_LABELS_ACCEPTED - %f",time_diff(process_before,process_after)/1000000);
+					//gettimeofday(&process_before , NULL);
 				}
 
-
+				// printNeighbourTable(); // commented on august 25, 2017, uncomment it later
+				
             }
 
         }
@@ -1220,7 +1406,8 @@ int _get_MACTest(struct addr_tuple *myAddr, int numTierAddr) {
 int pingHello() {
 
 	signal(SIGTSTP, signal_callbackZ_handler);
-	
+
+	//_get_MACTest(0, NULL);
 	return 0;
 }
 
@@ -1368,9 +1555,10 @@ an example of an argument (argv) is ./run -T 2.1.2 -N 0 10.10.5.2 24 eth1. 7 com
 	//The argument comes as a pointer of pointers. we need to split and save them to following variables
 	int endNWCount = 0;
 	int numActiveEndIPs = 0;
-	
+	//struct in_addr ips[100];
 	boolean tierSpecial = false;
-
+	start_time = time(0);
+	gettimeofday(&process_before , NULL);
 	// RVP For Logging purpose
 	char* filename = "./testLogs.txt"; //The filename to which logs is being saved.
 	fptr = fopen(filename,"w");
@@ -1383,7 +1571,9 @@ an example of an argument (argv) is ./run -T 2.1.2 -N 0 10.10.5.2 24 eth1. 7 com
 	// Next - 	Root - 	sudo ./run -L 2 -N 0 10.10.5.2 24 eth3
 
     // to be deleted RVP
-   
+   // printf("\n argv[0]= %s",argv[0] );
+
+
 	if (argc > 1) { //if the number of arguments is greater than 1, we will go forward
 
 		argc--; //decrement the counter
@@ -1398,7 +1588,7 @@ an example of an argument (argv) is ./run -T 2.1.2 -N 0 10.10.5.2 24 eth1. 7 com
 				break;
 			}
 			opt = argv[0];
-            
+            //printf("\n OPT = %s",opt);
 			// Checking for -L
 			if (strcmp(opt, "-T") == 0) {
 				argc--;
@@ -1459,7 +1649,7 @@ an example of an argument (argv) is ./run -T 2.1.2 -N 0 10.10.5.2 24 eth1. 7 com
 				if (strcmp(opt, "-N") == 0) {
 					argc--;
 					argv++;
-					
+					//printf("-N Detected \n");
 					int edgeNode = atoi(argv[0]); //atoi converts string to integer. Here we checks what comes after the -N (0 or 1 comes after -N. 0 represent edge not and 1 represents not an edge node)
 					int initB = 0;
 					argc--;
@@ -1470,7 +1660,7 @@ an example of an argument (argv) is ./run -T 2.1.2 -N 0 10.10.5.2 24 eth1. 7 com
 						int iterationNCount = 0;
 						do {
 							char *nextN = argv[0]; //here the ipaddress is stored in the pointer
-							
+							//printf("Before : %s  \n", nextN);
 							if (nextN[0] == '-') {
 								if (iterationNCount == 0) {
 									totalIPError++;
@@ -1486,27 +1676,28 @@ an example of an argument (argv) is ./run -T 2.1.2 -N 0 10.10.5.2 24 eth1. 7 com
 							argv++;
 
 							char *nextN2 = argv[0]; //here the subnet mask is saved to the pointer 
-							
+							//printf("Before : %s  \n", nextN2);
 							if (nextN2[0] == '-') {
 								totalIPError++;
-								
+								//printf("ERROR: \n");
 								break;
 							}
 
+							//printf("CIDR : %s  \n", nextN2);
 							// pass it to other - CIDR
 							cidrs[initB] = atoi(nextN2); //convert the subnet mask to integer and store in cidrs[initB]
 							argc--;
 							argv++;
 
 							char *nextN3 = argv[0]; //interface is saved in the pointer
-							
+							//printf("Before : %s  \n", nextN3);
 							if (nextN3[0] == '-') {
 								totalIPError++;
-								
+								//printf("ERROR: \n");
 								break;
 							}
 
-							
+							//printf("Port Name : %s  \n", nextN3);
 							// pass it to other - Port name
 							portName[initB] = malloc(1 + strlen(nextN3)); //allocate memory for portName[initB]
 							strcpy(portName[initB], nextN3); //copy the interface to portName[initB]
@@ -1521,7 +1712,7 @@ an example of an argument (argv) is ./run -T 2.1.2 -N 0 10.10.5.2 24 eth1. 7 com
 						//  skip till '-' encountered
 						while (argc > 0) {
 							char *skipNext = argv[0];
-							
+							//printf("Skipping: %s  \n", skipNext);
 							if (skipNext[0] == '-') {
 								break;
 							}
@@ -1539,7 +1730,7 @@ an example of an argument (argv) is ./run -T 2.1.2 -N 0 10.10.5.2 24 eth1. 7 com
 						|| (strcmp(opt, "-version") == 0)) {
 					argc--;
 					argv++;
-					
+					//printf("-V Detected \n");
 				}
 			}
 
@@ -1552,7 +1743,7 @@ an example of an argument (argv) is ./run -T 2.1.2 -N 0 10.10.5.2 24 eth1. 7 com
 					argc--;
 					argv++;
 					totalIPError++;
-					
+					//printf("ERROR: Invalid parameter \n");
 				}
 			}
 
@@ -1565,12 +1756,13 @@ an example of an argument (argv) is ./run -T 2.1.2 -N 0 10.10.5.2 24 eth1. 7 com
 	}
 	finalARGCValue = argc;
 
+	// Copy Pranav's assignment here
 	// Converting IP$ or IPV6 addresses from text to binary format.
 	// Doing it for all the edge IP addresses.
 
 	int z = 0;
 	for (z = 0; z < endNWCount; z++) {
-		
+		//printf("T->%s cidr %d\n", ipAddress[z], cidrs[z]);
 		inet_pton(AF_INET, ipAddress[z], &ips[z]); //inet_pton convert ipaddress from text to binary. ips[z] will have the binary form of the ip address stored as text in ipaddress[z]
 		ips[z].s_addr = ntohl(ips[z].s_addr); //The ntohl() function converts the unsigned integer netlong from network byte order to host byte order.
 		ips[z].s_addr = ((ips[z].s_addr >> (32 - cidrs[z])) << (32 - cidrs[z])); //remove the last element from ipaddress. eg 10.10.5.2 will change to 10.10.5.0. we are finding the network address from the host address.
@@ -1589,10 +1781,12 @@ an example of an argument (argv) is ./run -T 2.1.2 -N 0 10.10.5.2 24 eth1. 7 com
 	// Tier address , IP address 
 	// 
 	if (endNode == 0) { //endNode is updated to 0, if we are at edge node, ie if edgeNode is 0
-		
+		//struct addr_tuple * myAddr= (struct addr_tuple *) malloc(sizeof(struct addr_tuple)*(endNWCount * (myTotalTierAddress))); 
+		//printf("T0->%d ->%d\n", endNWCount, myTotalTierAddress);
+
 		int index1, index2;
 		int numTemp = 0;
-      
+      //  printf("\n3");
 		// if there are multiple IPS then do number of end IPS * tier addresses entries here.
 		for (index1 = 0; index1 < myTotalTierAddress; index1++) {
 			for (index2 = 0; index2 < endNWCount; index2++) {
@@ -1605,16 +1799,23 @@ an example of an argument (argv) is ./run -T 2.1.2 -N 0 10.10.5.2 24 eth1. 7 com
 				
 				char *temp11;
 
-			    myAddr->cidr = (uint8_t) cidrs[index2];
+			 //	printf("T2->%s ->%u\n",
+				//	inet_ntop(AF_INET, &myAddr[numTemp].ip_addr, temp11,
+				//				INET_ADDRSTRLEN), myAddr[numTemp].cidr);
+				myAddr->cidr = (uint8_t) cidrs[index2];
 				
 				strcpy(myAddr->etherPortName, portName[index2]);
 				
+				//printf("T3->%s ->%s\n", myAddr[numTemp].etherPortName,
+				//		portName[index2]);
+
 				// Add code for port number
                 myAddr->if_index = -1;
 			    myAddr->isNew = true;
 				myAddr->next = NULL;
 				add_entry_LL(myAddr);
-				
+				//printf("ethname%s\n", myAddr[numTemp].tier_addr);
+				//myAddr++;		
 			}
 		}
 		
@@ -1647,6 +1848,9 @@ an example of an argument (argv) is ./run -T 2.1.2 -N 0 10.10.5.2 24 eth1. 7 com
 		// testing print method
 		//print_entries_LL();
 	}
+	// Copied Pranav's assignment before
+
+	// ex-input format ./a.out 2 1.1 1.11
 	
 	return 0;
 }
@@ -1676,6 +1880,13 @@ int freqCount(char str[], char search) {
 
 void signal_callbackZ_handler(int signum) {
 
+	//printf("\n");
+	//printf("TEST: Caught signal Z - %d \n", signum);
+	//printf("\n");
+
+	// Cleanup and close up stuff here
+
+	// calling another function
 	displayTierAddr();
 	displayNeighbor();
 	printInputStats();
@@ -1700,7 +1911,7 @@ int trimAndDelNewLine() {
 	size_t len = strlen(specificLine);
 	if (len > 0) {
 		if (isspace(specificLine[len - 1]) || specificLine[len - 1] == '\n') {
-			
+			//printf("TEST: Inside trim: if of if:%c\n", specificLine[len - 1]);
 			len = len - 1;
 			specificLine[len] = '\0';
 		}
@@ -1777,8 +1988,8 @@ void checkEntriesToAdvertise() {
                 // If new port we have to advertise our tierAdd<->IPAdd table.
                 uint8_t *mplrPayload = allocate_ustrmem (IP_MAXPACKET);
                 int mplrPayloadLen = 0;
-				
-				mplrPayloadLen = buildPayload(mplrPayload, ONLY_NEW_ENTRIES, (int)if_nametoindex(interfaceList[ifs]));
+				//NS - buildPayload defined in endNW.c  
+                mplrPayloadLen = buildPayload(mplrPayload, ONLY_NEW_ENTRIES, (int)if_nametoindex(interfaceList[ifs]));
                 if (mplrPayloadLen) {
 				
                         endNetworkSend(interfaceList[ifs], mplrPayload, mplrPayloadLen);
@@ -1852,7 +2063,8 @@ void checkForLinkFailures (struct addr_tuple *myAddr, int numTierAddr) {
                         memcpy(&a->ip_addr, &current->ip_addr, sizeof(struct in_addr));
                         a->cidr = current->cidr;
                         add_entry_LL(a);
-                       
+                        //print_entries_LL();
+
                         struct addr_tuple *freeptr;
                         if (current == failedEndIPs_head) {
                                 failedEndIPs_head = current->next;
@@ -1883,7 +2095,7 @@ void checkForLinkFailures (struct addr_tuple *myAddr, int numTierAddr) {
                         }
                         ptr = ptr->next;
                 }
-		
+				//printf("* %u *",myAddr[i].cidr);
                 // if interface is not active, add to failed IP list.
                 if ((!isInFailedList) && (!isInterfaceActive(myAddr[i].ip_addr, myAddr[i].cidr))) {
 			struct addr_tuple *temp = (struct addr_tuple*) calloc (1, sizeof(struct addr_tuple));
@@ -1893,8 +2105,8 @@ void checkForLinkFailures (struct addr_tuple *myAddr, int numTierAddr) {
                         delete_entry_LL_IP(myAddr[i].ip_addr);
                         if (failedEndIPs_head == NULL) {
                                 failedEndIPs_head = temp;
-                        } 
-						else {
+                                //printf("Will be removing this %s\n", inet_ntoa(failedEndIPs_head->ip_addr));
+                        } else {
                                 temp->next = failedEndIPs_head;
                                 failedEndIPs_head = temp;
                         }
@@ -1971,9 +2183,9 @@ void getMyTierAddresses(char* tierAddr[])
     char recvOnEtherPort[5];
 
 
-    // Creating the EIBL CONTROL SOCKET HERE
+    // Creating the MNLR CONTROL SOCKET HERE
     if ((sock = socket(AF_PACKET, SOCK_RAW, htons(0x8850))) < 0) {
-        printf("\nERROR: EIBL Socket ");
+        printf("\nERROR: MNLR Socket ");
     }
     printf("\n Created a socket for auto address label! ");
 
@@ -2014,8 +2226,8 @@ void getMyTierAddresses(char* tierAddr[])
 
             unsigned int tc = src_addr.sll_ifindex;
             if_indextoname(tc, recvOnEtherPort);
-            
-			ethhead = (unsigned char *) buffer;
+            //printf("\n Control message recvd from %s \n",recvOnEtherPort); // uncomment it later
+            ethhead = (unsigned char *) buffer;
 
 
             if (ethhead == NULL) {
@@ -2025,14 +2237,21 @@ void getMyTierAddresses(char* tierAddr[])
 
 
                 uint8_t checkMSGType = (ethhead[14]);
-                
-				if (checkMSGType == MESSAGE_TYPE_LABELS_AVAILABLE) {
+                //printf("\n checkMSGType=%d \n",checkMSGType); //uncomment it later
+
+
+
+                 //   checkMSGType = (ethhead[15]);
+                 //   printf("\n checkMSGType=%d \n",checkMSGType);
+
+                    if (checkMSGType == MESSAGE_TYPE_LABELS_AVAILABLE) {
                         printf("\n Received MESSAGE_TYPE_LABELS_AVAILABLE \n");
 
                         int numberLabels = ethhead[15];
                         printf("\n Number of Labels available = %d", numberLabels);
                         int i = 0;
                         struct labels *acceptedList;
+
 
                         // Accepting each label here
                         int messagePointer = 16;
@@ -2078,7 +2297,9 @@ void getMyTierAddresses(char* tierAddr[])
 								strncpy(newLabel->label, label, strlen(label));
 					            newLabel->next = acceptedList;
 							    acceptedList = newLabel;
-                           }
+								
+                            }
+
 
                         }
 
@@ -2094,6 +2315,7 @@ void getMyTierAddresses(char* tierAddr[])
                         cplength++;
 
                         struct labels *temp =acceptedList;
+						
                         						
                         // Copy all other labels to the labels accepted message
                         while(!temp){
@@ -2110,6 +2332,8 @@ void getMyTierAddresses(char* tierAddr[])
                             memcpy(labelAssignmentPayLoad+cplength,label , labelLength);
                             cplength = cplength + labelLength;
                         }
+
+						
 
                         // Sending labels accepted message
                         ctrlLabelSend(MESSAGE_TYPE_LABELS_ACCEPTED,recvOnEtherPort, labelAssignmentPayLoad);
@@ -2179,7 +2403,8 @@ int generateChildLabel(char* myEtherPort, int childTier, struct labels** labelLi
 
     char *myTierAddress = getTierInfo();
     int countNewLabels = 0;
-	
+    //printf("\n My TierAddress = %s", myTierAddress);
+
     // Creating the label for the child here
     char childLabel[10];
     memset(childLabel, '\0', 10);
@@ -2213,8 +2438,8 @@ int generateChildLabel(char* myEtherPort, int childTier, struct labels** labelLi
     }
 
     printf("\n Exit: %s , Number of labels generated = %d \n",__FUNCTION__,countNewLabels);
-	
-	return countNewLabels;
+	//printf("\n Exit: %s , Number of labels generated = %d  labelList= %s\n",__FUNCTION__,countNewLabels,(*labelList)->label); NS commented on 4-14.20
+    return countNewLabels;
 
 }
 
@@ -2280,11 +2505,11 @@ void add_LL(char label[10]){
 			for (index2 = 0; index2 < endNWCount; index2++) {
 				struct addr_tuple * myAddr1= (struct addr_tuple *) malloc(sizeof(struct addr_tuple)); 
 
-				strcpy(myAddr1->tier_addr, label); 
+				strcpy(myAddr1->tier_addr, label);  // myaddr is a pointer that points to the first elment in the array i.e. 
 
 				myAddr1->ip_addr.s_addr  = (unsigned long int) malloc(sizeof(unsigned long int));
 				memset(&myAddr1->ip_addr.s_addr, '\0',sizeof(myAddr1->ip_addr.s_addr));
-				myAddr1->ip_addr.s_addr = ips[index2].s_addr; 
+				myAddr1->ip_addr.s_addr = ips[index2].s_addr;  // NS is this correct? - memcopy?
 				char *temp11;
 
 				myAddr1->cidr = (uint8_t) cidrs[index2];
