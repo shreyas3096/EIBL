@@ -2016,7 +2016,6 @@ void checkEntriesToUpdate(){
 						
 						temp->ip_addr.s_addr  = (unsigned long int) malloc(sizeof(unsigned long int));
 						memset(&temp->ip_addr.s_addr, '\0',sizeof(temp->ip_addr.s_addr));
-						printf("temp->etherPortName = %s, current->etherPortName = %s", temp->etherPortName, current->etherPortName);
 						strcpy(temp->etherPortName, current->etherPortName);
 
                         temp->if_index = -1;
