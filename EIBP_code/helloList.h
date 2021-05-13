@@ -429,8 +429,6 @@ int delete() {
 				//printf("TEST: Head node removed value was %s\n", temp->tier);
 				headHL = temp->next;
 
-				//free(temp);
-				//return 1;
 			} else {
 				prev->next = temp->next;
 				//printf("TEST: other node removed value was %s\n", temp->tier);
@@ -813,7 +811,6 @@ boolean setByTierManually(char inTier[20], boolean setFWDFields) {
 
  */
 
- //Modified by Supriya, on September 6, 2017.
 
  void findChildLongst(char* desTierAdd,char* childTierAdd, char* myLabel)
  {
@@ -833,21 +830,16 @@ boolean setByTierManually(char inTier[20], boolean setFWDFields) {
 
 	while (fNode != NULL) {
 		temp  = fNode->tier;		
-		// if(enableLogScreen)
-		// 	printf("\nfindChildLongst : Current Neighbour = %s \n",temp);
-		// if(enableLogFiles)
-		// 	fprintf(fptr,"\nfindChildLongst : Current Neighbour = %s \n",temp);
-		if(strlen(temp) >= strlen(myLabel)){// new line added by Supriya
+		
+		
+		if(strlen(temp) >= strlen(myLabel)){
 			if(strlen(temp) <= strlen(desTierAdd)){
 
 				//int tempLen = findUIDtoDestinationMatch(desTierAdd,temp);
 				if(checkIfSubstring(desTierAdd,temp)){
 					//ongestMtchLength = tempLen;
 					strcpy(childTierAdd, temp);
-					// if(enableLogScreen)
-					// 	printf("\nfindChildLongst : Result = %s \n",childTierAdd);
-					// if(enableLogFiles)
-					// 	fprintf(fptr,"\nfindChildLongst : Result = %s \n",childTierAdd);
+					
 					return;
 				}
 			}
@@ -855,10 +847,6 @@ boolean setByTierManually(char inTier[20], boolean setFWDFields) {
 		fNode = fNode->next;
 	}
 
-	// if(enableLogScreen)
-	// 	printf("\n findChildLongst : Result = %s \n",childTierAdd);
-	// if(enableLogFiles)
-	// 	fprintf(fptr,"\n findChildLongst : Result = %s \n",childTierAdd);
 	return;
  }
 
@@ -892,8 +880,6 @@ int examineNeighbourTable1(char* desTierAdd, char* longstMatchingNgbr,char* myLa
 	}
 
  }
-
- //modified by Supriya on August 28,2017
 
  int examineNeighbourTable(char* desTierAdd, char* longstMatchingNgbr,char* myLabel, int type) 
  {
@@ -1136,6 +1122,7 @@ int findUIDtoDestinationMatch(char* destAddr , char* neighborAddr){
 
 }
 
+
 /**
  * CheckAllDestinationLabels(char[])
  *
@@ -1165,7 +1152,6 @@ int CheckAllDestinationLabels(char* dest){
 	return 1;
 }
 
-//Function Added by supriya on August 31, 2017. This function checks if the destination label is a subsrting of 
 //any of my labels(Which means that the destination is either my parent or grandparent). 
 //IF yes then returns true and generates the address of the parent of the current label to whom the 
 //the packet will be sent. 
@@ -1197,7 +1183,6 @@ boolean isDestSubstringOfMyLabels(char* destLabel,char* myMatchedLabel)
 	return false;
  }
 
-//Function added by supriya 
  //This function checks if any of my label is a subsrting of the destination label.
  boolean isMyLabelSubstringOfDest(char* destLabel,char* myMatchedLabel) 
  {
@@ -1391,8 +1376,4 @@ void timestamp()
   return;
 }
 
-
-
-
 #endif
-
